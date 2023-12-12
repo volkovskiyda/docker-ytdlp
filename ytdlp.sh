@@ -11,5 +11,5 @@ yt-dlp -f bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4 \
  --add-chapters --keep-video --split-chapters \
  --match-filter "!is_live & !live" \
  --min-sleep-interval 5 --max-sleep-interval 30 \
- --exec "rm %(requested_formats.:.filepath)#q" \
+ --exec "rm -f %(requested_formats.:.filepath)#q" \
  $args

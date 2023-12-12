@@ -23,7 +23,7 @@ docker run --rm -v /c/Users/user:/downloads ghcr.io/volkovskiyda/ytdlp 'video-id
 ### **Run container with bash entrypoint:**
 ```bash
 docker run -it --rm --entrypoint bash -v /downloads:/downloads ghcr.io/volkovskiyda/ytdlp
-> yt-dlp 'video-id' --print '%(id)s %(title)s'
+> yt-dlp --print '%(id)s | %(upload_date>%Y.%m.%d)s %(title).80s (%(duration>%H:%M:%S)s)' 'video-id'
 # or
 > /ytdlp_update.sh ; /ytdlp.sh video '--batch-file download.txt'
 ```
