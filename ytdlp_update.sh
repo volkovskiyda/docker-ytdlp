@@ -1,2 +1,2 @@
 #!/bin/bash
-yt-dlp -U
+apk -U upgrade yt-dlp
