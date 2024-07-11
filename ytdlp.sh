@@ -9,6 +9,7 @@ yt-dlp -f bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4 \
  -o "$out_path$ext" \
  -o "chapter:$chapter_folder/$out_path/%(section_number).3d. %(section_title).32s$ext" \
  --add-chapters --keep-video --split-chapters \
+ --add-metadata --embed-metadata --embed-thumbnail \
  --match-filter "!is_live & !live" \
  --min-sleep-interval 5 --max-sleep-interval 30 \
  --exec "rm -f %(requested_formats.:.filepath)#q" \
