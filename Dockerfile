@@ -1,6 +1,6 @@
 FROM alpine
 
-ADD yt-dlp.conf /home
+ADD yt-dlp.conf /root
 
 RUN apk -U add bash yt-dlp
 
