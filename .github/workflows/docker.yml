@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
   schedule:
-    - cron: '11 00 1 * *'
+    - cron: '0 0 * * 1'
 
   push:
     branches: [ "main" ]
@@ -22,21 +22,32 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
+      yt_dlp_version: ${{ steps.check.outputs.yt_dlp_version }}
     steps:
-      - name: Check latest yt-dlp release
+      - name: Check yt-dlp latest release
         id: check
         run: |
-          latest_release=$(curl -s "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest" | jq -r .tag_name)
-          current_date=$(date +'%Y-%m-%d')
-          if [[ "${{ github.event_name }}" == "repository_dispatch" ]] || \
+          if ! latest_release=$(curl -sf "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest" | jq -r .tag_name); then
+            echo "Error: Failed to fetch latest yt-dlp release"
+            exit 1
+          fi
+          echo "yt_dlp_version=$latest_release" >> $GITHUB_OUTPUT
+          
+          previous_version=$(curl -sf "https://api.github.com/repos/${{ github.repository }}/releases/latest" | jq -r '.body' | grep -o 'yt-dlp version: [^ ]*' | cut -d' ' -f3 || echo "none")
+          
+          echo "Latest yt-dlp version: $latest_release"
+          echo "Previous version: $previous_version"
+          
+          if [[ "$latest_release" != "$previous_version" ]] || \
              [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || \
              [[ "${{ github.event_name }}" == "push" ]] || \
              [[ "${{ github.event_name }}" == "schedule" ]]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "New yt-dlp version detected: $latest_release (previous: $previous_version)"
           else
             echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "No new yt-dlp version. Current: $latest_release"
           fi
-          echo "Latest yt-dlp release: $latest_release"
 
   build-and-push-image:
     needs: check-yt-dlp-release
@@ -76,7 +87,7 @@ jobs:
       run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
 
     - name: Build and push
-      uses: docker/build-push-action@v3
+      uses: docker/build-push-action@v4
       with:
         platforms: linux/amd64,linux/arm64
         push: true
@@ -91,3 +102,6 @@ jobs:
       with:
         tag_name: ${{ steps.date.outputs.date }}
         generate_release_notes: true
+        body: |
+            Build date: ${{ steps.date.outputs.date }}
+            yt-dlp version: ${{ needs.check-yt-dlp-release.outputs.yt_dlp_version }}
