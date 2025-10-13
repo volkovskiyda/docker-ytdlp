@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
   schedule:
-    - cron: '0 0 * * 1'
+    - cron: '0 0 * * *'  # daily at midnight
 
   push:
     branches: [ "main" ]
@@ -45,8 +45,7 @@ jobs:
           
           if [[ "$is_new_version" == "true" ]] || \
              [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || \
-             [[ "${{ github.event_name }}" == "push" ]] || \
-             [[ "${{ github.event_name }}" == "schedule" ]]; then
+             [[ "${{ github.event_name }}" == "push" ]]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
             echo "Building new Docker image with yt-dlp version: $latest_release (previous: $previous_version)"
           else
