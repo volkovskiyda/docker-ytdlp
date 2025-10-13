@@ -84,7 +84,7 @@ jobs:
 
     - name: Current date
       id: date
-      run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+      run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
     - name: Build and push
       uses: docker/build-push-action@v4
