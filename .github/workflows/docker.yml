@@ -36,14 +36,19 @@ jobs:
           previous_version=$(curl -sf "https://api.github.com/repos/${{ github.repository }}/releases/latest" | jq -r '.body' | grep -o 'yt-dlp version: [^ ]*' | cut -d' ' -f3 || echo "none")
           
           echo "Latest yt-dlp version: $latest_release"
-          echo "Previous version: $previous_version"
           
-          if [[ "$latest_release" != "$previous_version" ]] || \
+          is_new_version=false
+          if [[ "$latest_release" != "$previous_version" ]]; then
+            is_new_version=true
+            echo "New yt-dlp version detected: $latest_release (previous: $previous_version)"
+          fi
+          
+          if [[ "$is_new_version" == "true" ]] || \
              [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || \
              [[ "${{ github.event_name }}" == "push" ]] || \
              [[ "${{ github.event_name }}" == "schedule" ]]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
-            echo "New yt-dlp version detected: $latest_release (previous: $previous_version)"
+            echo "Building new Docker image with yt-dlp version: $latest_release (previous: $previous_version)"
           else
             echo "should_build=false" >> $GITHUB_OUTPUT
             echo "No new yt-dlp version. Current: $latest_release"
