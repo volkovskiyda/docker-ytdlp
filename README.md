@@ -11,6 +11,9 @@ docker pull ghcr.io/volkovskiyda/ytdlp
 ```bash
 docker run --rm -v /path/to/download/dir:/downloads ghcr.io/volkovskiyda/ytdlp 'video-id'
 ```
+```bash
+docker run --rm -d -v .:/downloads ghcr.io/volkovskiyda/ytdlp 'video-id'
+```
 
 **Mount a volume on Windows**
 ```bash
