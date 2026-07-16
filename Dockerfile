@@ -4,7 +4,7 @@ ARG YTDLP_VERSION=latest
 
 ADD yt-dlp.conf /root
 
-RUN apk -U --no-cache add bash ffmpeg ca-certificates curl \
+RUN apk -U --no-cache add bash ffmpeg ca-certificates curl deno \
     && if [ "$YTDLP_VERSION" = "latest" ]; then \
          base_url="https://github.com/yt-dlp/yt-dlp/releases/latest/download"; \
        else \
