@@ -32,9 +32,9 @@ jobs:
             exit 1
           fi
           echo "yt_dlp_version=$latest_release" >> $GITHUB_OUTPUT
-          
+
           previous_version=$(curl -sf "https://api.github.com/repos/${{ github.repository }}/releases/latest" | jq -r '.body' | grep -o 'yt-dlp version: [^ ]*' | cut -d' ' -f3 || echo "none")
-          
+
           echo "Latest yt-dlp version: $latest_release"
           
           is_new_version=false
@@ -95,6 +95,8 @@ jobs:
       with:
         platforms: linux/amd64,linux/arm64
         push: true
+        build-args: |
+          YTDLP_VERSION=${{ needs.check-yt-dlp-release.outputs.yt_dlp_version }}
         tags: |
           ${{ env.REPOSITORY }}:${{ steps.date.outputs.date }},
           ${{ env.REPOSITORY }}:latest,
