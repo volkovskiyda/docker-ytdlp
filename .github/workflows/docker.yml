@@ -4,7 +4,11 @@ on:
   workflow_dispatch:
 
   schedule:
-    - cron: '13 0 * * 0'  # weekly on Sunday
+    # Daily: the check job is a single API call and only builds when yt-dlp
+    # published a new release, so a weekly cron just adds up to six days of lag
+    # (2026.10.26 shipped on a Monday and would have waited for Sunday).
+    # 03:13 UTC is after yt-dlp's usual late-evening-UTC release window.
+    - cron: '13 3 * * *'
 
   push:
     branches: [ "main" ]
@@ -57,57 +61,86 @@ jobs:
     needs: check-yt-dlp-release
     if: needs.check-yt-dlp-release.outputs.should_build == 'true'
     runs-on: ubuntu-latest
+    # One release at a time: two concurrent runs would otherwise pick the same
+    # free tag, and an older build could overwrite a newer :latest.
+    concurrency:
+      group: release
+      cancel-in-progress: false
     permissions:
       contents: write
       packages: write
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v7
 
     - name: Set up QEMU
-      uses: docker/setup-qemu-action@v2
+      uses: docker/setup-qemu-action@v4
       with:
         platforms: all
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
+      uses: docker/setup-buildx-action@v4
 
     - name: Login to DockerHub
-      uses: docker/login-action@v2
+      uses: docker/login-action@v4
       with:
         username: ${{ env.OWNER }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
     - name: Login to GitHub Container registry
-      uses: docker/login-action@v2
+      uses: docker/login-action@v4
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ env.OWNER }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Current date
-      id: date
-      run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+    # Tag is the UTC date; a second release the same day (a push after the
+    # daily build, or a same-day yt-dlp hotfix) gets .1, then .2 etc. Checks
+    # git tags, not releases: the release action reuses an existing tag.
+    - name: Version
+      id: version
+      run: |
+        date="$(date -u +'%Y-%m-%d')"
+        version="$date"; n=0
+        while git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null; do
+          n=$((n+1)); version="$date.$n"
+        done
+        echo "date=$date" >> $GITHUB_OUTPUT
+        echo "version=$version" >> $GITHUB_OUTPUT
 
     - name: Build and push
-      uses: docker/build-push-action@v4
+      uses: docker/build-push-action@v7
       with:
         platforms: linux/amd64,linux/arm64
         push: true
         build-args: |
           YTDLP_VERSION=${{ needs.check-yt-dlp-release.outputs.yt_dlp_version }}
         tags: |
-          ${{ env.REPOSITORY }}:${{ steps.date.outputs.date }},
+          ${{ env.REPOSITORY }}:${{ steps.version.outputs.version }},
           ${{ env.REPOSITORY }}:latest,
-          ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:${{ steps.date.outputs.date }},
+          ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:${{ steps.version.outputs.version }},
           ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:latest
 
+    # The image is already pushed, so this cannot stop a bad build from
+    # reaching :latest, but it fails the run (and the release below) loudly
+    # instead of letting a binary that cannot even print its version sit
+    # behind a green check. Both platforms: arm64 runs under the QEMU set up
+    # above.
+    - name: Smoke test
+      run: |
+        for platform in linux/amd64 linux/arm64; do
+          echo "== $platform"
+          docker run --rm --platform "$platform" --entrypoint '' \
+            "${{ env.REGISTRY }}/${{ env.REPOSITORY }}:${{ steps.version.outputs.version }}" \
+            yt-dlp --version
+        done
+
     - name: Release
-      uses: softprops/action-gh-release@v0.1.14
-      with:
-        tag_name: ${{ steps.date.outputs.date }}
-        generate_release_notes: true
-        body: |
-            Build date: ${{ steps.date.outputs.date }}
-            yt-dlp version: ${{ needs.check-yt-dlp-release.outputs.yt_dlp_version }}
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release create "${{ steps.version.outputs.version }}" \
+          --generate-notes \
+          --notes "Build date: ${{ steps.version.outputs.date }}
+        yt-dlp version: ${{ needs.check-yt-dlp-release.outputs.yt_dlp_version }}"
