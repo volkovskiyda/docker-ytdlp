@@ -128,6 +128,8 @@ jobs:
         echo "date=$date" >> "$GITHUB_OUTPUT"
         echo "version=$version" >> "$GITHUB_OUTPUT"
 
+    # Date tags only: :latest moves in "Tag latest", once the smoke test has
+    # passed, so a broken build never reaches the tag users pull.
     - name: Build and push
       uses: docker/build-push-action@v7
       with:
@@ -136,23 +138,36 @@ jobs:
         build-args: |
           YTDLP_VERSION=${{ needs.check-yt-dlp-release.outputs.yt_dlp_version }}
         tags: |
-          ${{ env.REPOSITORY }}:${{ steps.version.outputs.version }},
-          ${{ env.REPOSITORY }}:latest,
-          ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:${{ steps.version.outputs.version }},
-          ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:latest
+          ${{ env.REPOSITORY }}:${{ steps.version.outputs.version }}
+          ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:${{ steps.version.outputs.version }}
 
-    # The image is already pushed, so this cannot stop a bad build from
-    # reaching :latest, but it fails the run (and the release below) loudly
-    # instead of letting a binary that cannot even print its version sit
-    # behind a green check. Both platforms: arm64 runs under the QEMU set up
-    # above.
+    # Both platforms: arm64 runs under the QEMU set up above. Without a URL,
+    # yt-dlp -v prints its version and the ffmpeg and JS runtime it found,
+    # then exits 2, so this checks the whole toolchain without any network.
+    # A missing ffmpeg or deno shows as "exe versions: none" or
+    # "JS runtimes: none", which `--version` alone would not catch.
     - name: Smoke test
+      env:
+        IMAGE: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:${{ steps.version.outputs.version }}
+        YTDLP_VERSION: ${{ needs.check-yt-dlp-release.outputs.yt_dlp_version }}
       run: |
         for platform in linux/amd64 linux/arm64; do
           echo "== $platform"
-          docker run --rm --platform "$platform" --entrypoint '' \
-            "${{ env.REGISTRY }}/${{ env.REPOSITORY }}:${{ steps.version.outputs.version }}" \
-            yt-dlp --version
+          out=$(docker run --rm --platform "$platform" "$IMAGE" -v --ignore-config 2>&1) || true
+          grep -E 'yt-dlp version|exe versions|JS runtimes' <<<"$out" || { echo "$out"; exit 1; }
+          grep -qF "yt-dlp version stable@$YTDLP_VERSION " <<<"$out"
+          grep -q 'exe versions: ffmpeg ' <<<"$out"
+          grep -q 'JS runtimes: deno-' <<<"$out"
+        done
+
+    # Copies the tested manifest list, so :latest has the same digest as the
+    # date tag; nothing is rebuilt.
+    - name: Tag latest
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        for repo in "$REPOSITORY" "$REGISTRY/$REPOSITORY"; do
+          docker buildx imagetools create -t "$repo:latest" "$repo:$VERSION"
         done
 
     - name: Release
