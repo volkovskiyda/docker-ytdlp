@@ -12,9 +12,19 @@ on:
 
   push:
     branches: [ "main" ]
+    # A docs-only push would otherwise publish a new image and release with
+    # the same yt-dlp and the same image contents.
+    paths-ignore:
+      - 'README.md'
+      - 'LICENSE'
+      - '.gitignore'
 
   repository_dispatch:
     types: [yt-dlp-release]
+
+# Read-only by default; build-and-push-image asks for what it needs.
+permissions:
+  contents: read
 
 env:
   REGISTRY: ghcr.io
@@ -30,14 +40,23 @@ jobs:
     steps:
       - name: Check yt-dlp latest release
         id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # gh, not `curl | jq`: jq exits 0 on the empty output of a failed
+        # curl, so that guard never fired and the run went on to build with
+        # an empty version. gh exits non-zero on HTTP errors and its requests
+        # are authenticated, so they do not share the anonymous rate limit.
         run: |
-          if ! latest_release=$(curl -sf "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest" | jq -r .tag_name); then
+          set -o pipefail
+          if ! latest_release=$(gh api repos/yt-dlp/yt-dlp/releases/latest --jq .tag_name) \
+             || [[ -z "$latest_release" ]]; then
             echo "Error: Failed to fetch latest yt-dlp release"
             exit 1
           fi
-          echo "yt_dlp_version=$latest_release" >> $GITHUB_OUTPUT
+          echo "yt_dlp_version=$latest_release" >> "$GITHUB_OUTPUT"
 
-          previous_version=$(curl -sf "https://api.github.com/repos/${{ github.repository }}/releases/latest" | jq -r '.body' | grep -o 'yt-dlp version: [^ ]*' | cut -d' ' -f3 || echo "none")
+          previous_version=$(gh release view --repo "$GITHUB_REPOSITORY" --json body --jq .body \
+            | grep -o 'yt-dlp version: [^ ]*' | cut -d' ' -f3) || previous_version=none
 
           echo "Latest yt-dlp version: $latest_release"
           
@@ -50,10 +69,10 @@ jobs:
           if [[ "$is_new_version" == "true" ]] || \
              [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || \
              [[ "${{ github.event_name }}" == "push" ]]; then
-            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
             echo "Building new Docker image with yt-dlp version: $latest_release (previous: $previous_version)"
           else
-            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
             echo "No new yt-dlp version. Current: $latest_release"
           fi
 
@@ -106,8 +125,8 @@ jobs:
         while git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null; do
           n=$((n+1)); version="$date.$n"
         done
-        echo "date=$date" >> $GITHUB_OUTPUT
-        echo "version=$version" >> $GITHUB_OUTPUT
+        echo "date=$date" >> "$GITHUB_OUTPUT"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
 
     - name: Build and push
       uses: docker/build-push-action@v7
@@ -141,6 +160,7 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         gh release create "${{ steps.version.outputs.version }}" \
+          --target "$GITHUB_SHA" \
           --generate-notes \
           --notes "Build date: ${{ steps.version.outputs.date }}
         yt-dlp version: ${{ needs.check-yt-dlp-release.outputs.yt_dlp_version }}"
